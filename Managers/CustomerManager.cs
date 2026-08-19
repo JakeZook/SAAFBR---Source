@@ -12,6 +12,13 @@ public class CustomerManager : MonoBehaviour
     [SerializeField] TV TV;
     [SerializeField] CashManager cashManager;
 
+    [Header("Order Line")]
+    [Tooltip("Standing spots behind the order point, in order (index 0 = " +
+    "second in line, index 1 = third in line, etc).")]
+    [SerializeField] private Transform[] lineSpots;
+
+    private List<Customer> queue = new List<Customer>();
+
     [Header("NPC Model Customization")]
     [SerializeField] private GameObject customerPrefab;
     [SerializeField] private Material[] eyeMats;
@@ -44,6 +51,8 @@ public class CustomerManager : MonoBehaviour
                 table.tableIndex = i;
             }
         }
+
+        StartCoroutine(AutoSpawnCustomers());
     }
 
     //Test block - spawn customer if space
@@ -51,7 +60,6 @@ public class CustomerManager : MonoBehaviour
     {
         if (other.CompareTag("Player"))
         {
-
             if (IsTableOpen()) SpawnCustomer();
             else Debug.Log("No tables!");
         }
@@ -112,10 +120,9 @@ public class CustomerManager : MonoBehaviour
         openTables[table.tableIndex] = false;
 
         //Set variables on specific customer for AI path finding
-        TestCustomer script = npc.GetComponent<TestCustomer>();
-        if (script) 
+        Customer script = npc.GetComponent<Customer>();
+        if (script)
         {
-            script.orderPoint = orderPoint;
             script.sitPoint = table.sitPoint;
             script.despawnPoint = spawnPoint;
             script.platePoint = table.platePoint;
@@ -125,9 +132,19 @@ public class CustomerManager : MonoBehaviour
 
             //Passes all tvs for order render
             script.TV = TV;
-        }
 
-        if (cashManager) script.cashManager = cashManager;
+            if (cashManager) script.cashManager = cashManager;
+        }
+    }
+
+    private IEnumerator AutoSpawnCustomers()
+    {
+        while (true)
+        {
+            float waitTime = Random.Range(10f, 60f);
+            yield return new WaitForSeconds(waitTime);
+            if (IsTableOpen()) SpawnCustomer();
+        }
     }
 
     //Pick table out of list of available tables
@@ -164,4 +181,49 @@ public class CustomerManager : MonoBehaviour
     {
         openTables[index] = true;
     }
+
+    // ================= Order Line Queue =================
+
+    // Called by a customer once, in its Start(), to join the back of the line
+    public void RegisterCustomer(Customer customer)
+    {
+        queue.Add(customer);
+        UpdateLinePositions();
+    }
+
+    // Called by a customer once it's done ordering and is heading to its table -
+    // this is what makes everyone behind them step forward
+    public void AdvanceLine(Customer customerLeaving)
+    {
+        queue.Remove(customerLeaving);
+        UpdateLinePositions();
+    }
+
+    private void UpdateLinePositions()
+    {
+        for (int i = 0; i < queue.Count; i++)
+        {
+            bool isFront = (i == 0);
+
+            if (isFront)
+            {
+                queue[i].SetLineTarget(orderPoint, true);
+                continue;
+            }
+
+            int spotIndex = i - 1;
+
+            if (spotIndex >= lineSpots.Length)
+            {
+                // Line is longer than the spots we've set up for - these customers
+                // just wait wherever they currently are until there's room to move up.
+                Debug.LogWarning($"CustomerManager: line has {queue.Count} customers but only " +
+                $"{lineSpots.Length} lineSpots configured.");
+                continue;
+            }
+
+            queue[i].SetLineTarget(lineSpots[spotIndex], false);
+        }
+    }
 }
+
