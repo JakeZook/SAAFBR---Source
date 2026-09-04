@@ -30,11 +30,26 @@ public class Knife : MonoBehaviour, IUseable
         choppable = other.GetComponent<Choppable>();
     }
 
+    private void OnTriggerExit(Collider other)
+    {
+        Choppable exited = other.GetComponent<Choppable>();
+        if (exited == choppable)
+        {
+            choppable = null;
+        }
+    }
+
     private void ChopObject()
     {
+        if (choppable == null) return;
+
+        Vector3 spawnPos = choppable.gameObject.transform.position;
+        Quaternion spawnRot = choppable.gameObject.transform.rotation;
+
         GameObject ingredient = Instantiate(choppable.GetIngredientToSpawn());
-        ingredient.transform.position = choppable.gameObject.transform.position;
-        ingredient.transform.rotation = choppable.gameObject.transform.rotation;
+        ingredient.transform.position = spawnPos;
+        ingredient.transform.rotation = spawnRot;
+
         Destroy(choppable.gameObject);
         choppable = null;
     }

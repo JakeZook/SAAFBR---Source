@@ -271,4 +271,9 @@ public class Patty : MonoBehaviour, IInteractable
     {
         playerPickup = playerPickupRef;
     }
+
+    public bool CanHighlight()
+    {
+        return true;
+    }
 }

@@ -102,4 +102,10 @@ public class Sink : MonoBehaviour, IInteractable
 
         return cleanPlateForPlayer;
     }
+
+    public bool CanHighlight()
+    {
+        if (dirtyPlateCount >= 1 || cleanPlateCount >= 1) return true;
+        return false;
+    }
 }

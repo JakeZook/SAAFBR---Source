@@ -14,4 +14,10 @@ public class Cabinet : MonoBehaviour, IInteractable
         GameObject spawnedIngredient = Instantiate(ingredientToGive, gameObject.transform.position, Quaternion.identity);
         playerPickup.PickupObject(spawnedIngredient);
     }
+
+    public bool CanHighlight()
+    {
+        if (playerPickup.heldObject == null) return true;
+        return false;
+    }
 }

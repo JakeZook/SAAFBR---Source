@@ -6,6 +6,9 @@ public class TV : MonoBehaviour
 {
     [SerializeField] private GameObject[] orderCards;
 
+    [Tooltip("The TV that overflow orders spill onto when this one is full. Leave empty on the last TV in the chain.")]
+    [SerializeField] private TV nextTV;
+
     public int orderNum = 0;
 
     private float[] orderTimers;
@@ -40,35 +43,39 @@ public class TV : MonoBehaviour
         }
     }
 
+    // Call this one on your FIRST TV only (the head of the chain).
+    // It owns the master order-number counter; overflow TVs never
+    // generate their own numbers, they just receive one.
     public (int, int) RenderOrderOnScreen(
         List<string> pattyTemps,
         List<IngredientSO> orderIngredients,
         float cost)
     {
-        // Find the first empty card.
-        // Orders always fill from left to right.
-        int cardIndex = -1;
+        orderNum++;
+        return PlaceOrder(orderNum, 0f, pattyTemps, orderIngredients, cost);
+    }
 
-        for (int i = 0; i < orderCards.Length; i++)
-        {
-            if (!orderCards[i].activeSelf)
-            {
-                cardIndex = i;
-                break;
-            }
-        }
+    private (int, int) PlaceOrder(
+        int number,
+        float startTimer,
+        List<string> pattyTemps,
+        List<IngredientSO> orderIngredients,
+        float cost)
+    {
+        int cardIndex = FindFreeCardIndex();
 
         if (cardIndex == -1)
         {
-            Debug.LogWarning("No free order cards!");
+            if (nextTV != null)
+                return nextTV.PlaceOrder(number, startTimer, pattyTemps, orderIngredients, cost);
+
+            Debug.LogWarning("No free order cards on any TV!");
             return (-1, -1);
         }
 
-        // Reset the timer for this order.
-        orderTimers[cardIndex] = 0f;
+        orderTimers[cardIndex] = startTimer;
 
         GameObject card = orderCards[cardIndex];
-
         card.SetActive(true);
 
         TMP_Text[] textBlocks = card.transform
@@ -81,7 +88,6 @@ public class TV : MonoBehaviour
         Transform costParent = card.transform.GetChild(2);
         TMP_Text costText = costParent.GetComponent<TMP_Text>();
 
-        // Hide and clear all ingredient text.
         foreach (TMP_Text text in textBlocks)
         {
             text.gameObject.SetActive(false);
@@ -90,15 +96,12 @@ public class TV : MonoBehaviour
 
         int pattyIndex = 0;
 
-        orderNum++;
-
-        orderNumText.text = orderNum.ToString();
+        orderNumText.text = number.ToString();
         orderNumText.gameObject.SetActive(true);
 
         costText.text = "$" + cost.ToString("F2");
         costText.gameObject.SetActive(true);
 
-        // Reverse ingredients for the UI.
         List<IngredientSO> ingredients = new List<IngredientSO>(orderIngredients);
         ingredients.Reverse();
 
@@ -118,46 +121,39 @@ public class TV : MonoBehaviour
             textBlocks[i].gameObject.SetActive(true);
         }
 
-        return (cardIndex, orderNum);
+        return (cardIndex, number);
     }
 
-    public void RemoveOrderOnScreen(int orderNumber)
+    // Call this one on whichever TV you like — it'll search the
+    // whole chain for the order.
+    public bool RemoveOrderOnScreen(int orderNumber)
     {
-        int cardIndex = -1;
-
-        for (int i = 0; i < orderCards.Length; i++)
-        {
-            if (!orderCards[i].activeSelf)
-                continue;
-
-            TMP_Text orderNumText = orderCards[i]
-                .transform.GetChild(1)
-                .GetComponent<TMP_Text>();
-
-            if (int.TryParse(orderNumText.text, out int currentOrderNumber))
-            {
-                if (currentOrderNumber == orderNumber)
-                {
-                    cardIndex = i;
-                    break;
-                }
-            }
-        }
+        int cardIndex = FindCardIndexForOrder(orderNumber);
 
         if (cardIndex == -1)
         {
-            Debug.LogWarning($"Could not find Order {orderNumber} on the TV.");
-            return;
+            if (nextTV != null)
+                return nextTV.RemoveOrderOnScreen(orderNumber);
+
+            Debug.LogWarning($"Could not find Order {orderNumber} on any TV.");
+            return false;
         }
 
-        orderCards[cardIndex].SetActive(false);
-        orderTimers[cardIndex] = 0f;
+        RemoveOrderAtIndex(cardIndex);
+        return true;
+    }
 
-        // Shift everything after cardIndex one slot left,
-        // tracking the last slot that actually got copied into.
-        int lastShiftedIndex = cardIndex;
+    // Shifts everything after `index` left within THIS TV, then
+    // pulls the next TV's first order over to fill the gap we
+    // just opened (which cascades down the chain).
+    private void RemoveOrderAtIndex(int index)
+    {
+        orderCards[index].SetActive(false);
+        orderTimers[index] = 0f;
 
-        for (int i = cardIndex; i < orderCards.Length - 1; i++)
+        int lastShiftedIndex = index;
+
+        for (int i = index; i < orderCards.Length - 1; i++)
         {
             if (!orderCards[i + 1].activeSelf)
                 break;
@@ -167,10 +163,64 @@ public class TV : MonoBehaviour
             lastShiftedIndex = i + 1;
         }
 
-        // Clear the card whose data just got duplicated one slot left,
-        // NOT always the last slot in the array.
         orderCards[lastShiftedIndex].SetActive(false);
         orderTimers[lastShiftedIndex] = 0f;
+
+        PullOrderFromNextTV();
+    }
+
+    // If this TV now has a free slot and the next TV has an order
+    // waiting, move that order's #1 spot over here.
+    private void PullOrderFromNextTV()
+    {
+        if (nextTV == null)
+            return;
+
+        int freeIndex = FindFreeCardIndex();
+        if (freeIndex == -1)
+            return;
+
+        if (!nextTV.orderCards[0].activeSelf)
+            return;
+
+        CopyCard(nextTV.orderCards[0], orderCards[freeIndex]);
+        orderTimers[freeIndex] = nextTV.orderTimers[0];
+
+        // This shifts nextTV's remaining orders left and recursively
+        // pulls from ITS nextTV too, if one exists.
+        nextTV.RemoveOrderAtIndex(0);
+    }
+
+    private int FindFreeCardIndex()
+    {
+        for (int i = 0; i < orderCards.Length; i++)
+        {
+            if (!orderCards[i].activeSelf)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private int FindCardIndexForOrder(int orderNumber)
+    {
+        for (int i = 0; i < orderCards.Length; i++)
+        {
+            if (!orderCards[i].activeSelf)
+                continue;
+
+            TMP_Text orderNumText = orderCards[i]
+                .transform.GetChild(1)
+                .GetComponent<TMP_Text>();
+
+            if (int.TryParse(orderNumText.text, out int currentOrderNumber)
+                && currentOrderNumber == orderNumber)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private void CopyCard(GameObject sourceCard, GameObject destinationCard)
@@ -183,7 +233,6 @@ public class TV : MonoBehaviour
             .transform.GetChild(0)
             .GetComponentsInChildren<TMP_Text>(true);
 
-        // Copy ingredient text and active state.
         for (int i = 0; i < destinationIngredientTexts.Length; i++)
         {
             if (i < sourceIngredientTexts.Length)
@@ -202,7 +251,6 @@ public class TV : MonoBehaviour
             }
         }
 
-        // Copy order number.
         TMP_Text sourceOrderNumber = sourceCard
             .transform.GetChild(1)
             .GetComponent<TMP_Text>();
@@ -216,7 +264,6 @@ public class TV : MonoBehaviour
             sourceOrderNumber.gameObject.activeSelf
         );
 
-        // Copy cost.
         TMP_Text sourceCost = sourceCard
             .transform.GetChild(2)
             .GetComponent<TMP_Text>();

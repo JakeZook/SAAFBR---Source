@@ -44,8 +44,9 @@ public class PlayerPickup : MonoBehaviour
     public float trajectoryEndMarkerOffset = 0.02f;
     [Tooltip("Distance along the throw direction the line starts from, so it clears the held object instead of starting inside/behind it.")]
     public float trajectoryStartOffset = 0.5f;
+    [SerializeField] TrajectoryMarker trajectoryMarker;
 
-    private GameObject heldObject;
+    public GameObject heldObject;
     private Rigidbody heldRb;
     private Collider heldCol;
     private GameObject highlightedObject;
@@ -168,10 +169,6 @@ public class PlayerPickup : MonoBehaviour
         if (heldObject != null && heldRb != null)
         {
             IUseable useable = heldObject.GetComponent<IUseable>();
-
-            // Useable items are held at usePoint so they line up for use. While charging a throw (never true for
-            // useable items at the same time — Use() takes over mouse-down before charging can start), the object
-            // moves out to throwPoint instead. Otherwise it sits at the normal holdPoint.
             Transform anchor;
             if (useable != null && usePoint != null) anchor = usePoint;
             else if (isChargingThrow && throwPoint != null) anchor = throwPoint;
@@ -203,7 +200,6 @@ public class PlayerPickup : MonoBehaviour
 
             float currentLerpSpeed = isChargingThrow ? rotationLerpSpeed * 0.2f : rotationLerpSpeed;
 
-            // Exponential smoothing instead of a raw Lerp with an uncapped t value
             float rotT = 1f - Mathf.Exp(-currentLerpSpeed * Time.fixedDeltaTime);
             Quaternion smoothedRotation = Quaternion.Lerp(heldObject.transform.rotation, targetRotation, rotT);
 
@@ -232,7 +228,7 @@ public class PlayerPickup : MonoBehaviour
             heldRb.drag = 0f;
             heldRb.angularDrag = 5f;
             heldRb.interpolation = RigidbodyInterpolation.Interpolate;
-            heldRb.collisionDetectionMode = CollisionDetectionMode.Continuous;
+            heldRb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
             if (heldObject.GetComponent<BurgerStack>() != null)
                 heldRb.constraints = RigidbodyConstraints.FreezeRotation;
@@ -244,7 +240,6 @@ public class PlayerPickup : MonoBehaviour
         IUseable useable = heldObject.GetComponent<IUseable>();
         if (useable != null) desiredRotation = useable.GetRotationOffset();
 
-        // No more pickup-time calibration — just store the offset itself
         rotationOffset = desiredRotation;
 
         ClearHighlight();
@@ -301,10 +296,6 @@ public class PlayerPickup : MonoBehaviour
         float force = GetCurrentThrowForce();
         Vector3 velocity = playerCamera.transform.forward * force;
 
-        // Simulate from the TRUE launch point (matching ThrowObject() exactly), so flight time and the
-        // landing point are physically accurate. trajectoryStartOffset only controls how much of the near
-        // end we skip *drawing* (so the line doesn't render through the held object) — it must not shift
-        // the simulation itself, or the arc travels farther than the real throw and overshoots the marker.
         Transform lineOrigin = throwPoint != null ? throwPoint : holdPoint;
         Vector3 origin = lineOrigin.position;
         Vector3 point = origin;
@@ -320,10 +311,9 @@ public class PlayerPickup : MonoBehaviour
 
             Vector3 nextPoint = point + velocity * trajectoryTimeStep + 0.5f * Physics.gravity * trajectoryTimeStep * trajectoryTimeStep;
 
-            // Stop the line early (and snap to the hit point) if it would hit something
             if (Physics.Linecast(point, nextPoint, out RaycastHit hit, trajectoryCollisionMask, QueryTriggerInteraction.Ignore))
             {
-                if (visiblePoints.Count == 0) visiblePoints.Add(origin); // guarantee a drawable segment on very close hits
+                if (visiblePoints.Count == 0) visiblePoints.Add(origin);
                 visiblePoints.Add(hit.point);
                 DrawLine(visiblePoints);
                 ShowEndMarker(hit);
@@ -357,7 +347,11 @@ public class PlayerPickup : MonoBehaviour
 
     void HideEndMarker()
     {
-        if (trajectoryEndMarker != null) trajectoryEndMarker.gameObject.SetActive(false);
+        if (trajectoryEndMarker != null)
+        {
+            trajectoryEndMarker.gameObject.SetActive(false);
+            trajectoryMarker.RemoveOutline();
+        }
     }
 
     void HideTrajectoryLine()
@@ -369,11 +363,17 @@ public class PlayerPickup : MonoBehaviour
     void HandleHighlight()
     {
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
+
         if (Physics.Raycast(ray, out RaycastHit hit, pickupRange, ~0, QueryTriggerInteraction.Ignore))
         {
-            if (hit.collider.CompareTag("Pickup") || hit.collider.CompareTag("Interactable") || hit.collider.CompareTag("Useable"))
+            bool validTag = hit.collider.CompareTag("Pickup") || hit.collider.CompareTag("Interactable") || hit.collider.CompareTag("Useable");
+
+            if (validTag)
             {
-                if (hit.collider.gameObject != heldObject)
+                IInteractable interactable = hit.collider.GetComponent<IInteractable>();
+                bool canHighlight = interactable == null || interactable.CanHighlight();
+
+                if (canHighlight && hit.collider.gameObject != heldObject)
                 {
                     if (highlightedObject != hit.collider.gameObject)
                     {

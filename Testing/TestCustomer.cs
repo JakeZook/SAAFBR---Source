@@ -442,4 +442,9 @@ public class TestCustomer : MonoBehaviour, IInteractable
 
         return earnings;
     }
+
+    public bool CanHighlight()
+    {
+        return true;
+    }
 }

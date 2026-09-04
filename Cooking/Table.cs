@@ -63,4 +63,10 @@ public class Table : MonoBehaviour, IInteractable
 
         needsClean = true;
     }
+
+    public bool CanHighlight()
+    {
+        if (needsClean) return true;
+        return false;
+    }
 }

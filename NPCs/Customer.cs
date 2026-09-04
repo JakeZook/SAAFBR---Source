@@ -7,7 +7,7 @@ using UnityEngine.AI;
 
 public class Customer : MonoBehaviour, IInteractable
 {
-    private enum State
+    public enum State
     {
         MovingToLine,   // walking to whatever spot the manager just assigned (queue spot or order point)
         WaitingInLine,  // idle, standing in the queue, waiting for the manager to advance us
@@ -485,5 +485,16 @@ public class Customer : MonoBehaviour, IInteractable
         earnings = Mathf.Max(0f, earnings);
 
         return earnings;
+    }
+
+    public State GetState()
+    {
+        return currentState;
+    }
+
+    public bool CanHighlight()
+    {
+        if (currentState == State.ReadyToOrder) return true;
+        return false;
     }
 }

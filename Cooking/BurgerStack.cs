@@ -13,6 +13,8 @@ public class BurgerStack : MonoBehaviour
     public bool isComplete = false;
     public BoxCollider stackCollider;
     private IngredientSO lastAdded  = null;
+    private Vector3 originalColliderSize;
+    private Vector3 originalColliderCenter;
 
     public struct PattyData
     {
@@ -36,6 +38,9 @@ public class BurgerStack : MonoBehaviour
         {
             stackCollider = gameObject.AddComponent<BoxCollider>();
         }
+
+        originalColliderSize = stackCollider.size;
+        originalColliderCenter = stackCollider.center;
     }
 
     public void StackIngredient(StackableItem stackable, IngredientSO ingredient)
@@ -304,5 +309,29 @@ public class BurgerStack : MonoBehaviour
     public List<PattyData> GetPattyData()
     {
         return pattyDataList;
+    }
+
+    public void ClearStack()
+    {
+        // Destroy all visual ingredient children under this stack
+        for (int i = transform.childCount - 1; i >= 1; i--)
+        {
+            Destroy(transform.GetChild(i).gameObject);
+        }
+
+        // Reset tracking data
+        ingredients.Clear();
+        pattyDataList.Clear();
+        stackSize = 0;
+        isComplete = false;
+        isBaconCooked = true;
+        lastAdded = null;
+
+        // Reset collider back to empty stack size
+        if (stackCollider != null)
+        {
+            stackCollider.size = originalColliderSize;
+            stackCollider.center = originalColliderCenter;
+        }
     }
 }
